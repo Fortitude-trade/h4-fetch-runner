@@ -17,6 +17,23 @@ const PAUSE_YEARS = Number(process.env.PAUSE_YEARS_MS || 20000);
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const ts = () => new Date().toISOString().slice(11, 19);
 
+// Diagnostic only (DEBUG_LIB=1): log the status of every HTTP request the library makes. Behaviour is unchanged.
+if (process.env.DEBUG_LIB === '1' && typeof globalThis.fetch === 'function') {
+  const orig = globalThis.fetch.bind(globalThis);
+  globalThis.fetch = async (...args) => {
+    const u = String((args[0] && args[0].url) || args[0]);
+    try {
+      const r = await orig(...args);
+      console.log(ts(), 'HTTP', r.status, r.headers.get('content-length') || '-', u.slice(-58));
+      return r;
+    } catch (e) {
+      const c = e && e.cause;
+      console.log(ts(), 'NETERR', String((c && (c.code || c.message)) || e.message).slice(0, 120), u.slice(-58));
+      throw e;
+    }
+  };
+}
+
 async function main() {
   if (!INSTRUMENTS.length) { console.error('INSTRUMENTS is empty'); process.exit(2); }
   fs.mkdirSync(OUT, { recursive: true });
