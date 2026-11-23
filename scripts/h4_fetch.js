@@ -50,7 +50,8 @@ async function main() {
         fs.writeFileSync(file, JSON.stringify(out));
         console.log(ts(), inst, y, `OK ${out.length}`);
       } catch (e) {
-        console.log(ts(), inst, y, `FAILED ${String(e && e.message).slice(0, 80)} - stopping this instrument`);
+        const c = e && e.cause; const cause = c ? ` | cause: ${c.code || ''} ${String(c.message || c).slice(0, 160)}` : '';
+        console.log(ts(), inst, y, `FAILED ${String(e && e.message).slice(0, 80)}${cause} - stopping this instrument`);
         failed = true;
         break; // stop on first failure; never loop retries
       }
