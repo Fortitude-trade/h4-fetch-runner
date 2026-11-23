@@ -41,12 +41,14 @@ async function main() {
           dates: { from: new Date(Date.UTC(y, 0, 1)), to: new Date(Date.UTC(y + 1, 0, 1)) },
           timeframe: 'h4', priceType: 'bid', format: 'json',
           retryCount: 0, batchSize: 1, pauseBetweenBatchesMs: PAUSE_FILES,
+          debug: process.env.DEBUG_LIB === '1',
         });
         const out = (rates || []).map(r => ({
           ts: new Date(r.timestamp).toISOString(),
           open: +r.open, high: +r.high, low: +r.low, close: +r.close,
           volume: r.volume == null ? 0 : +r.volume,
         }));
+        if (out.length === 0) throw new Error('empty result (0 bars) for a year after inception - treated as a failure, not cached');
         fs.writeFileSync(file, JSON.stringify(out));
         console.log(ts(), inst, y, `OK ${out.length}`);
       } catch (e) {

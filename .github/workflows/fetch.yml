@@ -89,6 +89,7 @@ jobs:
           FROM_YEAR: ${{ needs.plan.outputs.from }}
           TO_YEAR: ${{ needs.plan.outputs.to }}
           OUT_DIR: ${{ github.workspace }}/out
+          DEBUG_LIB: ${{ inputs.mode == 'control' && '1' || '' }}
         run: node scripts/h4_fetch.js
       - name: Encrypt what was fetched (key never printed)
         if: ${{ always() }}
