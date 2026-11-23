@@ -1,0 +1,112 @@
+# Manual-only. Fetches Dukascopy H4 history from GitHub's runners (different IPs from a rate-limited home connection).
+# Artifacts are ENCRYPTED with a key held in the ARTIFACT_KEY repo secret, so a public artifact download is useless.
+name: fetch
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "probe = test reachability from this runner; control = fetch xauusd 2003 only; fetch = fetch the listed instruments"
+        required: true
+        default: probe
+        type: choice
+        options: [probe, control, fetch]
+      instruments:
+        description: "fetch mode: comma list of dukascopy-node instrument ids"
+        required: false
+        default: "xauusd,xagusd,btcusd,ethusd,lightcmdusd,coppercmdusd,gascmdusd,xptcmdusd"
+      from_year:
+        description: "fetch mode: first year"
+        required: false
+        default: "2003"
+      to_year:
+        description: "fetch mode: last year (complete years only)"
+        required: false
+        default: "2025"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    if: ${{ inputs.mode == 'probe' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe Dukascopy from this runner (3 single requests, 10s apart)
+        run: |
+          for u in \
+            "https://datafeed.dukascopy.com/datafeed/XAUUSD/2025/09/01/10h_ticks.bi5" \
+            "https://datafeed.dukascopy.com/datafeed/XAUUSD/2011/00/BID_candles_hour_1.bi5" \
+            "https://datafeed.dukascopy.com/datafeed/XAUUSD/2003/05/BID_candles_hour_1.bi5"; do
+            curl -s -o /dev/null -w "$(date -u +%T) %{http_code} %{size_download}B %{time_total}s  $u\n" --max-time 45 "$u" || true
+            sleep 10
+          done
+
+  plan:
+    if: ${{ inputs.mode != 'probe' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      list: ${{ steps.p.outputs.list }}
+      from: ${{ steps.p.outputs.from }}
+      to: ${{ steps.p.outputs.to }}
+    steps:
+      - id: p
+        env:
+          MODE: ${{ inputs.mode }}
+          INSTR: ${{ inputs.instruments }}
+          FROM: ${{ inputs.from_year }}
+          TO: ${{ inputs.to_year }}
+        run: |
+          if [ "$MODE" = "control" ]; then INSTR="xauusd"; FROM=2003; TO=2003; fi
+          case "$FROM$TO" in (*[!0-9]*) echo "year inputs must be digits"; exit 1;; esac
+          echo "list=$(printf '%s' "$INSTR" | tr -d ' ' | jq -Rc 'split(",") | map(select(test("^[a-z0-9]+$")))')" >> "$GITHUB_OUTPUT"
+          echo "from=$FROM" >> "$GITHUB_OUTPUT"
+          echo "to=$TO" >> "$GITHUB_OUTPUT"
+
+  fetch:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        inst: ${{ fromJSON(needs.plan.outputs.list) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install the pinned library
+        # Installed at the checkout root (ephemeral) so the script's ESM import() resolves it by walking up.
+        run: |
+          npm init -y >/dev/null && npm install dukascopy-node@1.46.4 --no-audit --no-fund
+          node -e "import('dukascopy-node').then(m=>console.log('dukascopy-node loaded, getHistoricalRates:', typeof (m.getHistoricalRates||m.default.getHistoricalRates)))"
+      - name: Fetch (one file at a time, no retries, stop on first failure)
+        env:
+          INSTRUMENTS: ${{ matrix.inst }}
+          FROM_YEAR: ${{ needs.plan.outputs.from }}
+          TO_YEAR: ${{ needs.plan.outputs.to }}
+          OUT_DIR: ${{ github.workspace }}/out
+        run: node scripts/h4_fetch.js
+      - name: Encrypt what was fetched (key never printed)
+        if: ${{ always() }}
+        env:
+          ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
+        run: |
+          mkdir -p enc
+          if [ -d out ] && [ -n "$(ls -A out)" ]; then
+            tar czf - -C out . | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:ARTIFACT_KEY -out "enc/${{ matrix.inst }}.tgz.enc"
+            ls -l enc
+          else
+            echo "nothing fetched"
+          fi
+      - name: Upload the encrypted bundle
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.inst }}
+          path: enc/
+          if-no-files-found: ignore
+          retention-days: 2
