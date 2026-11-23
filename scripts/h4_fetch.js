@@ -37,6 +37,13 @@ if (process.env.DEBUG_LIB === '1' && typeof globalThis.fetch === 'function') {
 async function main() {
   if (!INSTRUMENTS.length) { console.error('INSTRUMENTS is empty'); process.exit(2); }
   fs.mkdirSync(OUT, { recursive: true });
+  // Node's built-in fetch gives up connecting after 10s, but Dukascopy's CDN can take 15-35s to accept a connection from
+  // some networks. Give connects/headers/body a generous timeout (no effect on what is requested).
+  try {
+    const { Agent, setGlobalDispatcher } = await import('undici');
+    setGlobalDispatcher(new Agent({ connect: { timeout: 90000 }, headersTimeout: 180000, bodyTimeout: 180000 }));
+    console.log(ts(), 'undici dispatcher set: connect timeout 90s');
+  } catch (e) { console.log(ts(), 'undici not available, default timeouts:', e.message); }
   const mod = await import('dukascopy-node');
   const getHistoricalRates = mod.getHistoricalRates || (mod.default && mod.default.getHistoricalRates);
   const meta = mod.instrumentMetaData || (mod.default && mod.default.instrumentMetaData);

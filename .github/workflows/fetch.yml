@@ -81,7 +81,7 @@ jobs:
       - name: Install the pinned library
         # Installed at the checkout root (ephemeral) so the script's ESM import() resolves it by walking up.
         run: |
-          npm init -y >/dev/null && npm install dukascopy-node@1.46.4 --no-audit --no-fund
+          npm init -y >/dev/null && npm install dukascopy-node@1.46.4 undici@6.21.0 --no-audit --no-fund
           node -e "import('dukascopy-node').then(m=>console.log('dukascopy-node loaded, getHistoricalRates:', typeof (m.getHistoricalRates||m.default.getHistoricalRates)))"
       - name: Fetch (one file at a time, no retries, stop on first failure)
         env:
