@@ -68,9 +68,10 @@ jobs:
   fetch:
     needs: plan
     runs-on: ubuntu-latest
-    timeout-minutes: 330
+    timeout-minutes: 355
     strategy:
       fail-fast: false
+      max-parallel: 2
       matrix:
         inst: ${{ fromJSON(needs.plan.outputs.list) }}
     steps:
@@ -90,6 +91,8 @@ jobs:
           TO_YEAR: ${{ needs.plan.outputs.to }}
           OUT_DIR: ${{ github.workspace }}/out
           DEBUG_LIB: ${{ inputs.mode == 'control' && '1' || '' }}
+          MAX_RUNTIME_MS: ${{ inputs.mode == 'control' && '1800000' || '' }}
+          WAIT_MS: ${{ inputs.mode == 'control' && '300000' || '' }}
         run: node scripts/h4_fetch.js
       - name: Encrypt what was fetched (key never printed)
         if: ${{ always() }}
